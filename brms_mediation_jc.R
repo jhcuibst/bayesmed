@@ -1,6 +1,7 @@
 library(brms)
+
 # **************************************************
-# This function only for zero-inflated mediator iwth hurdle model
+# This function only for zero-inflated mediator with hurdle model
 brms_med.edit <- function(model.m = hnb.m, model.y = hnb.y,
                           treat = "treatment", mediator = "mediator", ind_mediator = NULL, outcome = "outcome",
                           control.value = 0, treat.value = 1,
@@ -8,10 +9,10 @@ brms_med.edit <- function(model.m = hnb.m, model.y = hnb.y,
 {
   value = c(control.value, treat.value)
   
-  # *********************************************************************
-  # ----------------
   dat.new = model.m$data
   
+  # *********************************************************************
+  # mediator fit with Hurdle models -------------------------------------
   if (family(model.m)$family %in% c("hurdle_negbinomial", "hurdle_poisson")){
     dpar.m = c("mu", "hu")
     predict.ms <- array(NA, dim = c(2, ndraws(model.m), nrow(dat.new)))
@@ -35,7 +36,9 @@ brms_med.edit <- function(model.m = hnb.m, model.y = hnb.y,
   }
   
   # *********************************************************************
-  # ----------------
+  # If mediator fit with ZI models --------------------------------------
+  ## waiting for edit; if ZI mediator model, the mediaiton effect passing through zero-inflationg
+  ## is the effect via a latent class. Need to predict this latent class first. 
   if (family(model.m)$family %in% c("zero_inflated_negbinomial", "zero_inflated_poisson")){
     dpar.m = c("mu", "zi")
     predict.ms <- array(NA, dim = c(2, ndraws(model.m), nrow(dat.new)))
@@ -44,7 +47,7 @@ brms_med.edit <- function(model.m = hnb.m, model.y = hnb.y,
       predict.ms[i,,] = 0
       predict.ms[i,,] = posterior_epred(model.m, newdata = dat.new, dpar = NULL)
     }
-    
+
     if(!is.null(ind_mediator)){
       predict.ind_ms <- array(NA, dim = c(2, ndraws(model.m), nrow(dat.new)))
       for(i in 1:length(value)){
@@ -58,8 +61,9 @@ brms_med.edit <- function(model.m = hnb.m, model.y = hnb.y,
   }
   
   # *********************************************************************
-  # ----------------
+  # If mediator model is Not Hurdle and NOt ZI models -------------------
   hu.models = c("hurdle_negbinomial", "hurdle_poisson","zero_inflated_negbinomial", "zero_inflated_poisson")
+  
   if (!(family(model.m)$family %in% hu.models)) {
     predict.ms <- array(NA, dim = c(2, ndraws(model.m), nrow(dat.new)))
     predict.ind_ms <- array(0, dim = c(2, ndraws(model.m), nrow(dat.new)))
@@ -71,13 +75,7 @@ brms_med.edit <- function(model.m = hnb.m, model.y = hnb.y,
   }
   
   # *********************************************************************
-  # ----------------
-  # if(logM){
-  #   predict.ind_ms = ifelse(predict.ind_ms == 0, 0.001, predict.ind_ms)
-  #   predict.ind_ms = log(predict.ind_ms)
-  # }
-  # *********************************************************************-----
-  
+  # Predict for outcome Y -----------------------------------------------
   dat.y = model.y$data
   ef_y = as_draws_df(model.y)
   
@@ -86,7 +84,9 @@ brms_med.edit <- function(model.m = hnb.m, model.y = hnb.y,
   if(grepl("hurdle", family(model.y)$family)) depar.outcome = c("mu", "hu")
   
   zi.outcome = grepl("zero", family(model.y)$family) | grepl("hurdle", family(model.y)$family)
-  # pred_y without mediator(s) effect ----
+  
+  # *********************************************************************
+  # pred_y given predictors, without mediator(s) effect -----------------
   predict.y.cov <- array(NA, dim = c(2, ndraws(model.y), nrow(dat.y)) )
   predict.y.cov.mu <- array(NA, dim = c(2, ndraws(model.y), nrow(dat.y)) )
   predict.y.cov.zi <- array(NA, dim = c(2, ndraws(model.y), nrow(dat.y)) )
@@ -107,7 +107,8 @@ brms_med.edit <- function(model.m = hnb.m, model.y = hnb.y,
     }
   }
   
-  # pred_y for treat and mediator(s) effect ----
+  # *********************************************************************
+  # pred_y given mediator(s) --------------------------------------------
   coef.mediator = paste("b_", mediator, sep = "")
   bm = as.matrix(ef_y)[,coef.mediator]
   
@@ -140,7 +141,7 @@ brms_med.edit <- function(model.m = hnb.m, model.y = hnb.y,
   }
   
   # *********************************************************************
-  ## check interaction between treatment and mediator(s)
+  ## check interaction between treatment and mediator(s) ----------------
   #******** wait to check interaction in the ZI-outcome model within ZI part *********
   #*
   INT.xm <- c(paste("b_", treat, ":", mediator, sep="") %in% colnames(as.matrix(model.y)),
@@ -151,7 +152,6 @@ brms_med.edit <- function(model.m = hnb.m, model.y = hnb.y,
   )
   
   # *********************************************************************
-  # if(any(INT.xm, INT.xIm)){
   coef.intxm = c(paste("b_", treat, ":", mediator, sep=""), paste("b_", mediator, ":", treat, sep="")  ) 
   coef.intxm = coef.intxm[INT.xm]
   
@@ -172,11 +172,13 @@ brms_med.edit <- function(model.m = hnb.m, model.y = hnb.y,
     bxIm = 0
   }
   
-  #
+  # *********************************************************************
+  # pred_y given all predictors -----------------------------------------
   outcome.linpred = array(NA, dim = c(2, 2, 2, ndraws(model.y), nrow(dat.y)))
   outcome.linpred.mu = array(NA, dim = c(2, 2, 2, ndraws(model.y), nrow(dat.y)))
   outcome.linpred.zi = array(NA, dim = c(2, 2, 2, ndraws(model.y), nrow(dat.y)))
   
+  # if( int_of_xIm & int_of_xm )
   if( int_of_xIm & int_of_xm ) {
     
     for(i in 1:length(value)){
@@ -186,24 +188,24 @@ brms_med.edit <- function(model.m = hnb.m, model.y = hnb.y,
           if(zi.outcome ){
             outcome.linpred.mu[i,j,r,,] = 
               suppressWarnings(as.numeric(as.matrix(predict.ms[j,,]*bm) + as.matrix(bxm*value[i]*predict.ms[j,,]) +
-                                            as.matrix(b.ind_m *predict.ind_ms[r,,] + bxIm*value[i]*predict.ind_ms[r,,]) ) + 
+                                          as.matrix(b.ind_m *predict.ind_ms[r,,] + bxIm*value[i]*predict.ind_ms[r,,]) ) + 
                                  predict.y.cov.mu[i,,])
             outcome.linpred.zi[i,j,r,,] = 
               suppressWarnings(as.numeric(as.matrix(predict.ms[j,,]*b_zi_m) + as.matrix(bxm*value[i]*predict.ms[j,,]) +
-                                            as.matrix(b_zi_indm *predict.ind_ms[r,,] + bxIm*value[i]*predict.ind_ms[r,,]) ) + 
+                                          as.matrix(b_zi_indm *predict.ind_ms[r,,] + bxIm*value[i]*predict.ind_ms[r,,]) ) + 
                                  predict.y.cov.zi[i,,])
             outcome.linpred[i,j,r,,] = outcome.linpred.mu[i,j,r,,]*(1-outcome.linpred.zi[i,j,r,,])
           }else{
             outcome.linpred[i,j,r,,] = 
               suppressWarnings(as.numeric(as.matrix(predict.ms[j,,]*bm) + as.matrix(bxm*value[i]*predict.ms[j,,]) +
-                                            as.matrix(b.ind_m *predict.ind_ms[r,,] + bxIm*value[i]*predict.ind_ms[r,,]) ) + 
+                                          as.matrix(b.ind_m *predict.ind_ms[r,,] + bxIm*value[i]*predict.ind_ms[r,,]) ) + 
                                  predict.y.cov[i,,])
           }
         }
       }
     }
   }
-  # 
+  # if(!(int_of_xIm) & int_of_xm) 
   if(!(int_of_xIm) & int_of_xm) {
     
     for(i in 1:length(value)){
@@ -228,7 +230,7 @@ brms_med.edit <- function(model.m = hnb.m, model.y = hnb.y,
       }
     }
   }
-  #
+  # if( int_of_xIm & !(int_of_xm))
   if( int_of_xIm & !(int_of_xm)) {
     
     for(i in 1:length(value)){
@@ -254,7 +256,7 @@ brms_med.edit <- function(model.m = hnb.m, model.y = hnb.y,
       }
     }
   }
-  #
+  # if(!(int_of_xIm) & !(int_of_xm) )
   if(!(int_of_xIm) & !(int_of_xm) ) {
     
     for(i in 1:length(value)){
@@ -286,7 +288,8 @@ brms_med.edit <- function(model.m = hnb.m, model.y = hnb.y,
   ### 1,2,2,, == x0,m1,Im1
   ### 2,1,2,, == x1,m0,Im1 etc.
   
-  # ----
+  # *********************************************************************
+  # Get posteriors of outcome and convert given link function -----------
   y_link = family(model.y)$link
   
   if(y_link == "identity")  outcome.pred = outcome.linpred
@@ -322,32 +325,29 @@ brms_med.edit <- function(model.m = hnb.m, model.y = hnb.y,
   } else {
     
     if(y_link == "logit") {
-      res.rd = cal.effects.jc(outcome.pred)
+      res.rd = cal.effects.diffsc(outcome.pred)
       res.rr = cal.rr.effects(outcome.pred)
       rst <- list(effects.rd = res.rd, effects.rr = res.rr, outcome.linpred=outcome.linpred, outcome.pred = outcome.pred)
     } else if(zi.outcome){
-      res.mu = cal.effects.jc(outcome.pred.mu)
-      res.zi = cal.effects.jc(outcome.pred.zi)
-      res.overall = cal.effects.jc(outcome.pred.overall)
+      res.mu = cal.effects.diffsc(outcome.pred.mu)
+      res.zi = cal.effects.diffsc(outcome.pred.zi)
+      res.overall = cal.effects.diffsc(outcome.pred.overall)
       rst <- list(effects.mu = res.mu, effects.zi = res.zi, effects.overall = res.overall,
                   outcome.linpred.mu=outcome.linpred.mu, outcome.linpred.zi=outcome.linpred.zi)
     } else{
-      res = cal.effects.jc(outcome.pred)
+      res = cal.effects.diffsc(outcome.pred)
       rst <- list(effects = res, outcome.linpred=outcome.linpred, outcome.pred = outcome.pred)
     }
   }
   rst 
 }
 
-cal.effects.jc <- function(outcome.pred)
+# calculate effects at difference scale 
+cal.effects.diffsc <- function(outcome.pred)
 {
   direct_control = outcome.pred[2,1,1,,] - outcome.pred[1,1,1,,]
-  # treated: Y(1,M(1)) - Y(0,M(1))
   direct_treated = outcome.pred[2,2,1,,] - outcome.pred[1,2,1,,]
-  # mediation effect: Y(t,M(1)) - Y(t,M(0))
-  # control: Y(0,M(1)) - Y(0,M(0))
   indirect_control = outcome.pred[1,2,2,,] - outcome.pred[1,1,2,,]
-  # treated: Y(1,M(1)) - Y(1,M(0))
   indirect_treated = outcome.pred[2,2,2,,] - outcome.pred[2,1,2,,]
   
   direct = (direct_control + direct_treated)/2
@@ -399,30 +399,23 @@ cal.effects.jc <- function(outcome.pred)
   
   res
 }
+# if indicator variable exist, get effects with ind_m at difference scale
 cal.effects.ind  <- function(outcome.pred)
 {
   direct_control = outcome.pred[2,1,1,,] - outcome.pred[1,1,1,,]
-  # treated: Y(1,M(1)) - Y(0,M(1))
   direct_treated = outcome.pred[2,2,1,,] - outcome.pred[1,2,1,,]
-  # mediation effect: Y(t,M(1)) - Y(t,M(0))
-  # control: Y(0,M(1)) - Y(0,M(0))
   indirect_control = outcome.pred[1,2,2,,] - outcome.pred[1,1,2,,]
-  # treated: Y(1,M(1)) - Y(1,M(0))
   indirect_treated = outcome.pred[2,2,2,,] - outcome.pred[2,1,2,,]
   
   direct = (direct_control + direct_treated)/2
   indirect = (indirect_control + indirect_treated)/2
   
   # **************************************************
-  # treated: Y(1,M(0), I(m1)) - Y(1,M(0), I(m0))
   indirect_Im = outcome.pred[2,1,2,,] - outcome.pred[2,1,1,,]
   indirect = indirect + indirect_Im
-  
   total = direct + indirect 
   # **************************************************
-  # t1 = outcome.pred[2,2,2,,] - outcome.pred[1,1,1,,]  # include Im
-  # t2 = outcome.pred[2,2, ,,] - outcome.pred[1,1, ,,]  # does not include Im
-  # **************************************************
+  
   pmed = indirect/total
   
   res = rbind(
@@ -474,15 +467,12 @@ cal.effects.ind  <- function(outcome.pred)
   
   res
 }
+# calculate effects at Risk Ratio scale 
 cal.rr.effects <- function(outcome.pred)
 {
   direct_control = outcome.pred[2,1,1,,] / outcome.pred[1,1,1,,]
-  # treated: Y(1,M(1)) - Y(0,M(1))
   direct_treated = outcome.pred[2,2,1,,] / outcome.pred[1,2,1,,]
-  # mediation effect: Y(t,M(1)) - Y(t,M(0))
-  # control: Y(0,M(1)) - Y(0,M(0))
   indirect_control = outcome.pred[1,2,2,,] / outcome.pred[1,1,2,,]
-  # treated: Y(1,M(1)) - Y(1,M(0))
   indirect_treated = outcome.pred[2,2,2,,] / outcome.pred[2,1,2,,]
   
   direct = (direct_control + direct_treated)/2
@@ -534,22 +524,18 @@ cal.rr.effects <- function(outcome.pred)
   
   res
 }
+# if indicator variable exist, get effects with ind_m at Risk Ratio scale 
 cal.rr.effects.ind <- function(outcome.pred)
 {
   direct_control = outcome.pred[2,1,1,,] / outcome.pred[1,1,1,,]
-  # treated: Y(1,M(1)) - Y(0,M(1))
   direct_treated = outcome.pred[2,2,1,,] / outcome.pred[1,2,1,,]
-  # mediation effect: Y(t,M(1)) - Y(t,M(0))
-  # control: Y(0,M(1)) - Y(0,M(0))
   indirect_control = outcome.pred[1,2,2,,] / outcome.pred[1,1,2,,]
-  # treated: Y(1,M(1)) - Y(1,M(0))
   indirect_treated = outcome.pred[2,2,2,,] / outcome.pred[2,1,2,,]
   
   direct = (direct_control + direct_treated)/2
   indirect = (indirect_control + indirect_treated)/2
   
   # **************************************************
-  # treated: Y(1,M(0), I(m1)) - Y(1,M(0), I(m0))
   indirect_Im = outcome.pred[2,1,2,,] / outcome.pred[2,1,1,,]
   indirect = indirect * indirect_Im
   
@@ -607,3 +593,11 @@ cal.rr.effects.ind <- function(outcome.pred)
   
   res
 }
+
+
+
+
+
+
+
+
